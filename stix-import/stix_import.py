@@ -16,9 +16,15 @@ from stix.common.vocabs import IndicatorType
 import libtaxii as t
 import libtaxii.messages_11 as tm11
 import libtaxii.clients as tc
+from libtaxii.common import generate_message_id
+from libtaxii.constants import *
 
 import lxml.etree
 from xml.etree.ElementTree import XML, XMLParser, tostring, TreeBuilder
+
+from six.moves.urllib.parse import urlparse 
+
+taxii_version = VID_TAXII_XML_11
 
 def extractObservable(args, obs, values):
 	typ = obs["properties"]["xsi:type"]
@@ -110,7 +116,7 @@ def get_parser():
 	parser.add_option('--verbose', action="store_true", help="Print various inputs and outputs to STDERR")
 	
 	parser.add_option('-x', '--taxii', help='TAXII Server Endpoint. Either this parameter or a STIX file is required.', action='store')
-	parser.add_option('-p', '--taxiiport', default="80", help='Port for the TAXII Server', action='store')
+	parser.add_option('-p', '--taxiiport', default=None, help='Port for the TAXII Server', action='store')
 	parser.add_option('-c', "--collection", default="default", help="TAXII Data Collection to poll. Defaults to 'default'.")
 	parser.add_option('--taxii_endpoint', help='TAXII Service Endpoint. Required if -x is provided.', action='store')
 	parser.add_option("--taxii_ssl", default=None, help="Set this to use SSL for the TAXII request")
@@ -176,13 +182,40 @@ def process_package_dict(args,stix_dict):
 	
 	return len(values)
 		
+def create_client(use_https, proxy, cert=None, key=None, username=None, password=None):
+    client = tc.HttpClient()
+    client.set_use_https(use_https)
+    client.set_proxy(proxy)
+    tls = (cert is not None and key is not None)
+    basic = (username is not None and password is not None)
+    if tls and basic:
+        client.set_auth_type(tc.HttpClient.AUTH_CERT_BASIC)
+        client.set_auth_credentials({'key_file': key,
+                                     'cert_file': cert,
+                                     'username': username,
+                                     'password': password})
+    elif tls:
+        client.set_auth_type(tc.HttpClient.AUTH_CERT)
+        client.set_auth_credentials({'key_file': key, 'cert_file': cert})
+    elif basic:
+        client.set_auth_type(tc.HttpClient.AUTH_BASIC)
+        client.set_auth_credentials({'username': username, 'password': password})
+
+    return client
+
+def create_request_message(args):
+    """
+    This function should create a request message.
+    Should be implemented by child classes.
+    """
+    raise NotImplementedError
 
 def main():
 	
 	# This is a work-around for the fact that the 1.0 indicator type was removed from the STIX python 
 	# library, even though it is the essentially the same as the 1.1 type. We want to still support 1.0
 	# indicators since they are out there, and there is no difference for the purposes of this script.
-	vocabs._VOCAB_MAP["stixVocabs:IndicatorTypeVocab-1.0"] = IndicatorType
+	# vocabs._VOCAB_MAP["stixVocabs:IndicatorTypeVocab-1.0"] = IndicatorType
 	
 	# Create XML parser that can strip namespaces
 	xmlParser = EntityParser()
@@ -226,26 +259,53 @@ def main():
 		exclusive_begin_timestamp_label=begin_ts,
 		inclusive_end_timestamp_label=end_ts,
 		poll_parameters=tm11.PollRequest.PollParameters())
+                #print(poll_req.to_xml())
+
+                #url = urlparse(args[0].url)
+                #print(url)
 
 		poll_req_xml = poll_req.to_xml()
 		
 		client = tc.HttpClient()
-		
+                #client = self.create_client(url.scheme == 'https',
+#                                            args[0].proxy,
+#                                            args[0].cert,
+#                                            args[0].key,
+#                                            args[0].taxii_username,
+#                                            args[0].taxii_password) 
+
+
 		if args[0].taxii_ssl:
-			client.setUseHttps(True)
+			client.set_use_https(True)
+                        print("Using HTTPS")
 		
 		if args[0].taxii_username:
-			client.setAuthType(1)
+		#	client.setAuthType(1)
 
 			if not args[0].taxii_password:
 				args[0].taxii_password = getpass.getpass("Enter your taxii password: ")
 
-			client.setAuthCredentials({'username': args[0].taxii_username, 'password': args[0].taxii_password})
+                        client.set_auth_type(tc.HttpClient.AUTH_BASIC)
+			client.set_auth_credentials({'username': args[0].taxii_username, 'password': args[0].taxii_password})
+                
+#                discovery_request = tm11.DiscoveryRequest(generate_message_id())
+#                discovery_xml = discovery_request.to_xml(pretty_print=True)
 
-		resp = client.callTaxiiService2(args[0].taxii, args[0].taxii_endpoint + "/poll/", t.VID_TAXII_XML_11, poll_req_xml, args[0].taxiiport)
-		
+                print(taxii_version)
+                print(args[0].taxii)
+                print(args[0].taxii_endpoint)
+                print(args[0].taxiiport)
+
+		resp = client.call_taxii_service2(args[0].taxii,
+                                                  args[0].taxii_endpoint ,
+                                                  taxii_version,
+                                                  poll_req_xml,
+                                                  args[0].taxiiport)
+		#resp = client.callTaxiiService2(args[0].taxii, args[0].taxii_endpoint , t.VID_TAXII_XML_11, poll_req_xml, args[0].taxiiport)
+
 		response_message = t.get_message_from_http_response(resp, '0')
-		
+                print response_message.to_xml(pretty_print=True)
+
 		response_dict = response_message.to_dict();
 
 		indicators = 0
@@ -278,16 +338,11 @@ def main():
 
 	# Import from a XML file on disk
 	elif args[0].referenceset and args[0].file:
-		
 		stix_package = xmlParser.parse_xml(args[0].file, False)
-
 		indicators = process_package_dict( args, stix_package.to_dict() )
-		
 		print "Imported", indicators, "indicators into reference set", args[0].referenceset
-	
 	else:
 		print >> sys.stderr, "Invalid arguments. Type 'python stix_import.py --help' for usage.\n"
-						
 
 if __name__ == "__main__":
 	main()
