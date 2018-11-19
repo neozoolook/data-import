@@ -4,6 +4,9 @@ This is a simple script that can be used to import data from STIX and/or TAXII r
 
 It is a work in progress, and does not yet support all available STIX indicators.
 
+CHANGE LOG
+===========
+This code was tested by Qradar 7.2.8 and HTTPS Taxii Server ( 2018-11-19 )
 
 REQUIREMENTS
 ===========
