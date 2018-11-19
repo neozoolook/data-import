@@ -154,11 +154,12 @@ def process_package_dict(args,stix_dict):
 		else:
 			serverIP = '127.0.0.1'
 
-		url = 'https://' + serverIP + '/api/referencedata/sets/bulkLoad/' + args[0].referenceset
-
-		headers = { 'Accept': 'application/json', 'Content-type':'application/json', 'version':'0.1', 'SEC':args[0].token }
+		url = 'https://' + serverIP + '/api/reference_data/sets/bulk_load/' + args[0].referenceset
+		#headers = { 'Accept': 'application/json', 'Content-type':'application/json', 'version':'0.1', 'SEC':args[0].token }
+		headers = { 'Accept': 'application/json', 'Content-type':'application/json', 'SEC':args[0].token }
 
 		data = json.dumps(values)
+                print(headers)
 		data = data.encode('utf-8')
 	
 		if args[0].verbose:
@@ -254,57 +255,44 @@ def main():
 			print >> sys.stderr, "Could not parse either start or end time"
 			raise
 
+                #Create Request Header
 		poll_req = tm11.PollRequest(message_id=tm11.generate_message_id(),
 		collection_name=args[0].collection,
 		exclusive_begin_timestamp_label=begin_ts,
 		inclusive_end_timestamp_label=end_ts,
 		poll_parameters=tm11.PollRequest.PollParameters())
-                #print(poll_req.to_xml())
-
-                #url = urlparse(args[0].url)
-                #print(url)
 
 		poll_req_xml = poll_req.to_xml()
-		
+	
+                #Create request client object
 		client = tc.HttpClient()
-                #client = self.create_client(url.scheme == 'https',
-#                                            args[0].proxy,
-#                                            args[0].cert,
-#                                            args[0].key,
-#                                            args[0].taxii_username,
-#                                            args[0].taxii_password) 
 
-
+                #HTTPS Setting
 		if args[0].taxii_ssl:
 			client.set_use_https(True)
-                        print("Using HTTPS")
-		
+	
+                # Basic Auth
 		if args[0].taxii_username:
-		#	client.setAuthType(1)
-
 			if not args[0].taxii_password:
 				args[0].taxii_password = getpass.getpass("Enter your taxii password: ")
 
                         client.set_auth_type(tc.HttpClient.AUTH_BASIC)
 			client.set_auth_credentials({'username': args[0].taxii_username, 'password': args[0].taxii_password})
-                
-#                discovery_request = tm11.DiscoveryRequest(generate_message_id())
-#                discovery_xml = discovery_request.to_xml(pretty_print=True)
-
-                print(taxii_version)
-                print(args[0].taxii)
-                print(args[0].taxii_endpoint)
-                print(args[0].taxiiport)
+               
+                # For Debugging
+                #print(taxii_version)
+                #print(args[0].taxii)
+                #print(args[0].taxii_endpoint)
+                #print(args[0].taxiiport)
 
 		resp = client.call_taxii_service2(args[0].taxii,
                                                   args[0].taxii_endpoint ,
                                                   taxii_version,
                                                   poll_req_xml,
                                                   args[0].taxiiport)
-		#resp = client.callTaxiiService2(args[0].taxii, args[0].taxii_endpoint , t.VID_TAXII_XML_11, poll_req_xml, args[0].taxiiport)
 
 		response_message = t.get_message_from_http_response(resp, '0')
-                print response_message.to_xml(pretty_print=True)
+                #print response_message.to_xml(pretty_print=True)
 
 		response_dict = response_message.to_dict();
 
